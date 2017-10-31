@@ -17,50 +17,24 @@
  *
  * MySQL Protocol module for handling the protocol between the gateway
  * and the client.
- *
- * Revision History
- * Date         Who                     Description
- * 14/06/2013   Mark Riddoch            Initial version
- * 17/06/2013   Massimiliano Pinto      Added Client To MaxScale routines
- * 24/06/2013   Massimiliano Pinto      Added: fetch passwords from service users' hashtable
- * 02/09/2013   Massimiliano Pinto      Added: session refcount
- * 16/12/2013   Massimiliano Pinto      Added: client closed socket detection with recv(..., MSG_PEEK)
- * 24/02/2014   Massimiliano Pinto      Added: on failed authentication a new users' table is loaded
- *                                      with time and frequency limitations
- *                                      If current user is authenticated the new users' table will
- *                                      replace the old one
- * 28/02/2014   Massimiliano Pinto      Added: client IPv4 in dcb->ipv4 and inet_ntop for string
- *                                      representation
- * 11/03/2014   Massimiliano Pinto      Added: Unix socket support
- * 07/05/2014   Massimiliano Pinto      Added: specific version string in server handshake
- * 09/09/2014   Massimiliano Pinto      Added: 777 permission for socket path
- * 13/10/2014   Massimiliano Pinto      Added: dbname authentication check
- * 10/11/2014   Massimiliano Pinto      Added: client charset added to protocol struct
- * 29/05/2015   Markus Makela           Added SSL support
- * 11/06/2015   Martin Brampton         COM_QUIT suppressed for persistent connections
- * 04/09/2015   Martin Brampton         Introduce DUMMY session to fulfill guarantee DCB always has session
- * 09/09/2015   Martin Brampton         Modify error handler calls
- * 11/01/2016   Martin Brampton         Remove SSL write code, now handled at lower level;
- *                                      replace gwbuf_consume by gwbuf_free (multiple).
- * 07/02/2016   Martin Brampton         Split off authentication and SSL.
- * 31/05/2016   Martin Brampton         Implement connection throttling
  */
 
 #define MXS_MODULE_NAME "MySQLClient"
 
 #include <maxscale/protocol.h>
-#include <maxscale/alloc.h>
-#include <maxscale/log_manager.h>
-#include <maxscale/protocol/mysql.h>
-#include <maxscale/ssl.h>
-#include <maxscale/poll.h>
-#include <maxscale/modinfo.h>
-#include <sys/stat.h>
-#include <maxscale/modutil.h>
 #include <netinet/tcp.h>
-#include <maxscale/query_classifier.h>
+#include <sys/stat.h>
+#include <maxscale/alloc.h>
 #include <maxscale/authenticator.h>
+#include <maxscale/log_manager.h>
+#include <maxscale/modinfo.h>
+#include <maxscale/modutil.h>
+#include <maxscale/poll.h>
+#include <maxscale/protocol/mysql.h>
+#include <maxscale/query_classifier.h>
 #include <maxscale/session.h>
+#include <maxscale/ssl.h>
+#include "setsqlmodeparser.hh"
 
 static int process_init(void);
 static void process_finish(void);
@@ -99,6 +73,10 @@ static void gw_process_one_new_client(DCB *client_dcb);
  *
  * @return The module object
  */
+
+extern "C"
+{
+
 MXS_MODULE* MXS_CREATE_MODULE()
 {
     static MXS_PROTOCOL MyObject =
@@ -137,6 +115,8 @@ MXS_MODULE* MXS_CREATE_MODULE()
     };
 
     return &info;
+}
+
 }
 /*lint +e14 */
 
@@ -198,7 +178,7 @@ static void thread_finish(void)
  */
 static char *gw_default_auth()
 {
-    return "MySQLAuth";
+    return (char*)"MySQLAuth";
 }
 
 /**
@@ -256,7 +236,7 @@ int MySQLSendHandshake(DCB* dcb)
     }
     else
     {
-        version_string = GW_MYSQL_VERSION;
+        version_string = (char*)GW_MYSQL_VERSION;
         len_version_string = strlen(GW_MYSQL_VERSION);
     }
 
@@ -504,7 +484,7 @@ int gw_read_client_event(DCB* dcb)
     case MXS_AUTH_STATE_MESSAGE_READ:
         /* After this call read_buffer will point to freed data */
         if (nbytes_read < 3 || (0 == max_bytes && nbytes_read <
-                                (MYSQL_GET_PAYLOAD_LEN((uint8_t *) GWBUF_DATA(read_buffer)) + 4)) ||
+                                (int)(MYSQL_GET_PAYLOAD_LEN((uint8_t *) GWBUF_DATA(read_buffer)) + 4)) ||
             (0 != max_bytes && nbytes_read < max_bytes))
         {
 
@@ -689,7 +669,7 @@ gw_read_do_authentication(DCB *dcb, GWBUF *read_buffer, int nbytes_read)
         if (dcb->user == NULL)
         {
             /** User authentication complete, copy the username to the DCB */
-            MYSQL_session *ses = dcb->data;
+            MYSQL_session *ses = (MYSQL_session*)dcb->data;
             if ((dcb->user = MXS_STRDUP(ses->user)) == NULL)
             {
                 dcb_close(dcb);
@@ -707,6 +687,8 @@ gw_read_do_authentication(DCB *dcb, GWBUF *read_buffer, int nbytes_read)
          * normal data handling function instead of this one.
          */
         MXS_SESSION *session = session_alloc(dcb->service, dcb);
+        // For the time being only the sql_mode is stored in MXS_SESSION::client_protocol_data.
+        session->client_protocol_data = QC_SQL_MODE_DEFAULT;
 
         if (session != NULL)
         {
@@ -863,7 +845,7 @@ static bool process_client_commands(DCB* dcb, int bytes_available, GWBUF** buffe
             if (dcb->protocol_packet_length - MYSQL_HEADER_LEN != GW_MYSQL_MAX_PACKET_LEN)
             {
                 /** We're processing the first packet of a command */
-                proto->current_command = cmd;
+                proto->current_command = (mysql_server_cmd_t)cmd;
             }
 
             dcb->protocol_packet_length = pktlen + MYSQL_HEADER_LEN;
@@ -883,6 +865,55 @@ static bool process_client_commands(DCB* dcb, int bytes_available, GWBUF** buffe
     ss_dassert(queue);
     *buffer = queue;
     return true;
+}
+
+/**
+ * Sets the query classifier mode.
+ *
+ * @param session      The session for which the query classifier mode is adjusted.
+ * @param read_buffer  Pointer to a buffer, assumed to contain a statement.
+ *                     May be reallocated if not contiguous.
+ */
+void set_qc_mode(MXS_SESSION* session, GWBUF** read_buffer)
+{
+    SetSqlModeParser parser;
+    SetSqlModeParser::sql_mode_t sql_mode;
+
+    switch (parser.get_sql_mode(read_buffer, &sql_mode))
+    {
+    case SetSqlModeParser::ERROR:
+        // In practice only OOM.
+        break;
+
+    case SetSqlModeParser::IS_SET_SQL_MODE:
+        switch (sql_mode)
+        {
+        case SetSqlModeParser::ORACLE:
+            session_set_autocommit(session, false);
+            session->client_protocol_data = QC_SQL_MODE_ORACLE;
+            break;
+
+        case SetSqlModeParser::DEFAULT:
+            session_set_autocommit(session, true);
+            session->client_protocol_data = QC_SQL_MODE_DEFAULT;
+            break;
+
+        case SetSqlModeParser::SOMETHING:
+            break;
+
+        default:
+            ss_dassert(!true);
+        }
+        break;
+
+    case SetSqlModeParser::NOT_SET_SQL_MODE:
+        break;
+
+    default:
+        ss_dassert(!true);
+    }
+
+    qc_set_sql_mode(static_cast<qc_sql_mode_t>(session->client_protocol_data));
 }
 
 /**
@@ -936,13 +967,15 @@ gw_read_normal_data(DCB *dcb, GWBUF *read_buffer, int nbytes_read)
     if (rcap_type_required(capabilities, RCAP_TYPE_STMT_INPUT))
     {
         if (nbytes_read < 3 || nbytes_read <
-            (MYSQL_GET_PAYLOAD_LEN((uint8_t *) GWBUF_DATA(read_buffer)) + 4))
+            (int)(MYSQL_GET_PAYLOAD_LEN((uint8_t *) GWBUF_DATA(read_buffer)) + 4))
         {
 
             dcb->dcb_readqueue = read_buffer;
 
             return 0;
         }
+
+        set_qc_mode(session, &read_buffer);
         gwbuf_set_type(read_buffer, GWBUF_TYPE_MYSQL);
     }
 
@@ -952,7 +985,7 @@ gw_read_normal_data(DCB *dcb, GWBUF *read_buffer, int nbytes_read)
      * The option is stored as a two byte integer with the values 0 for enabling
      * multi-statements and 1 for disabling it.
      */
-    MySQLProtocol *proto = dcb->protocol;
+    MySQLProtocol *proto = (MySQLProtocol*)dcb->protocol;
     uint8_t opt;
 
     if (proto->current_command == MYSQL_COM_SET_OPTION &&
@@ -1047,8 +1080,8 @@ gw_read_finish_processing(DCB *dcb, GWBUF *read_buffer, uint64_t capabilities)
          * Ensure that there are enough backends
          * available for router to continue operation.
          */
-        session->service->router->handleError(session->service->router_instance,
-                                              session->router_session,
+        session->service->router->handleError((MXS_ROUTER*)session->service->router_instance,
+                                              (MXS_ROUTER_SESSION*)session->router_session,
                                               errbuf,
                                               dcb,
                                               ERRACT_NEW_CONNECTION,
@@ -1103,7 +1136,7 @@ mysql_client_auth_error_handling(DCB *dcb, int auth_val, int packet_number)
         /** Send error 1049 to client */
         message_len = 25 + MYSQL_DATABASE_MAXLEN;
 
-        fail_str = MXS_CALLOC(1, message_len + 1);
+        fail_str = (char*)MXS_CALLOC(1, message_len + 1);
         MXS_ABORT_IF_NULL(fail_str);
         snprintf(fail_str, message_len, "Unknown database '%s'", session->db);
 
@@ -1409,7 +1442,7 @@ gw_client_close(DCB *dcb)
         if (session->router_session != NULL)
         {
             /** Close router session and all its connections */
-            router->closeSession(router_instance, session->router_session);
+            router->closeSession((MXS_ROUTER*)router_instance, (MXS_ROUTER_SESSION*)session->router_session);
         }
     }
     return 1;
@@ -1567,9 +1600,9 @@ static int route_by_statement(MXS_SESSION* session, uint64_t capabilities, GWBUF
                         }
                         else if ((type & QUERY_TYPE_COMMIT) || (type & QUERY_TYPE_ROLLBACK))
                         {
-                            mxs_session_trx_state_t trx_state = session_get_trx_state(session);
+                            uint32_t trx_state = session_get_trx_state(session);
                             trx_state |= SESSION_TRX_ENDING_BIT;
-                            session_set_trx_state(session, trx_state);
+                            session_set_trx_state(session, (mxs_session_trx_state_t)trx_state);
 
                             if (type & QUERY_TYPE_ENABLE_AUTOCOMMIT)
                             {
@@ -1632,7 +1665,7 @@ static bool ensure_complete_packet(DCB *dcb, GWBUF **read_buffer, int nbytes_rea
     {
         uint8_t* data = (uint8_t *) GWBUF_DATA(*read_buffer);
 
-        if (nbytes_read < 3 || nbytes_read < MYSQL_GET_PAYLOAD_LEN(data) + 4)
+        if (nbytes_read < 3 || nbytes_read < (int)MYSQL_GET_PAYLOAD_LEN(data) + 4)
         {
             dcb->dcb_readqueue = gwbuf_append(dcb->dcb_readqueue, *read_buffer);
             return false;
