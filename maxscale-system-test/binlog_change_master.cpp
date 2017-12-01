@@ -25,7 +25,7 @@ TestConnections * Test ;
 int exit_flag;
 int master = 0;
 int i_trans = 0;
-const int trans_max = 100;
+const int trans_max = 300;
 int failed_transaction_num = 0;
 
 /** The amount of rows each transaction inserts */
@@ -78,6 +78,13 @@ int main(int argc, char *argv[])
     Test = new TestConnections(argc, argv);
     Test->set_timeout(3000);
 
+    if (strcmp(Test->test_name, "binlog_change_master_gtid") == 0)
+    {
+        Test->binlog_master_gtid = true;
+        Test->binlog_slave_gtid = true;
+        Test->tprintf("Using GTID\n");
+    }
+
     Test->repl->connect();
     execute_query(Test->repl->nodes[0], (char *) "DROP TABLE IF EXISTS t1;");
     Test->repl->close_connections();
@@ -88,8 +95,10 @@ int main(int argc, char *argv[])
     Test->repl->execute_query_all_nodes((char *) "RESET SLAVE ALL");
     Test->repl->execute_query_all_nodes((char *) "RESET MASTER");
 
+    Test->repl->verbose = true;
+
     Test->tprintf("Starting binlog configuration\n");
-    Test->start_binlog();
+    Test->start_binlog(0);
 
     pthread_t disconnec_thread_t;
     int  disconnect_iret;
@@ -119,13 +128,12 @@ int main(int argc, char *argv[])
     Test->repl->block_node(0);
     Test->stop_timeout();
 
-    sleep(30);
+    sleep(180);
 
     Test->tprintf("Done! Waiting for thread\n");
     exit_flag = 1;
     pthread_join(transaction_thread_t, NULL );
     Test->tprintf("Done!\n");
-
     Test->tprintf("Checking data on the node3 (slave)\n");
     char sql[256];
     char rep[256];
@@ -160,7 +168,6 @@ int main(int argc, char *argv[])
     }
     Test->repl->close_connections();
 
-
     int rval = Test->global_result;
     delete Test;
     return rval;
@@ -174,6 +181,12 @@ const char * setup_slave1 =
                  MASTER_LOG_FILE='%s',\
                  MASTER_LOG_POS=%s,\
                  MASTER_PORT=%d";
+const char * setup_slave_gtid =
+    "change master to MASTER_HOST='%s',\
+                     MASTER_USER='repl',\
+                     MASTER_PASSWORD='repl',\
+                     MASTER_PORT=%d, \
+                     MASTER_USE_GTID=Slave_pos";
 
 
 int select_new_master(TestConnections * test)
@@ -203,7 +216,8 @@ int select_new_master(TestConnections * test)
     test->tprintf("Real master pos : %s\n", log_pos);
 
     test->tprintf("Connecting to MaxScale binlog router (with any DB)\n");
-    MYSQL * binlog = open_conn_no_db(test->binlog_port, test->maxscale_IP, test->repl->user_name,
+    MYSQL * binlog = open_conn_no_db(test->maxscales->binlog_port[0], test->maxscales->IP[0],
+                                     test->repl->user_name,
                                      test->repl->password, test->ssl);
     test->add_result(mysql_errno(binlog), "Error connection to binlog router %s\n", mysql_error(binlog));
 
@@ -229,7 +243,6 @@ int select_new_master(TestConnections * test)
     test->tprintf("log file name %s\n", maxscale_log_file);
     sprintf(maxscale_log_file_new, "%s%06d", maxscale_log_file, pd + 1);
 
-    test->try_query(test->repl->nodes[2], (char *) "reset master");
     test->tprintf("Flush logs %d times\n", pd + 1);
     for (int k = 0; k < pd + 1; k++)
     {
@@ -243,17 +256,31 @@ int select_new_master(TestConnections * test)
 
     test->tprintf("reconnect to binlog\n");
     mysql_close(binlog);
-    binlog = open_conn_no_db(test->binlog_port, test->maxscale_IP, test->repl->user_name, test->repl->password,
+    binlog = open_conn_no_db(test->maxscales->binlog_port[0], test->maxscales->IP[0], test->repl->user_name,
+                             test->repl->password,
                              test->ssl);
     test->add_result(mysql_errno(binlog), "Error connection to binlog router %s\n", mysql_error(binlog));
 
     char str[1024];
-    //sprintf(str, setup_slave1, test->repl->IP[2], log_file_new, test->repl->port[2]);
-    sprintf(str, setup_slave1, test->repl->IP[2], maxscale_log_file_new, "4", test->repl->port[2]);
+
+    if (test->binlog_master_gtid)
+    {
+        test->tprintf("Configuring new master with GTID\n");
+        sprintf(str, setup_slave_gtid, test->repl->IP[2], test->repl->port[2]);
+    }
+    else
+    {
+        test->tprintf("Configuring new master with FILE and POS\n");
+        //sprintf(str, setup_slave1, test->repl->IP[2], log_file_new, test->repl->port[2]);
+        sprintf(str, setup_slave1, test->repl->IP[2], maxscale_log_file_new, "4", test->repl->port[2]);
+    }
     test->tprintf("change master query: %s\n", str);
     test->try_query(binlog, str);
-
+    test->tprintf("start slave\n");
     test->try_query(binlog, "start slave");
+    test->tprintf("start slave one more\n");
+    test->try_query(binlog, "start slave");
+    test->tprintf("slave started!\n");
 
     test->repl->close_connections();
 
@@ -264,7 +291,8 @@ void *disconnect_thread( void *ptr )
     MYSQL * conn;
     char cmd[256];
     int i;
-    conn = open_conn(Test->binlog_port, Test->maxscale_IP, Test->repl->user_name, Test->repl->password,
+    conn = open_conn(Test->maxscales->binlog_port[0], Test->maxscales->IP[0], Test->repl->user_name,
+                     Test->repl->password,
                      Test->repl->ssl);
     Test->add_result(mysql_errno(conn), "Error connecting to Binlog router, error: %s\n", mysql_error(conn));
     i = 3;
@@ -305,6 +333,8 @@ void *transaction_thread( void *ptr )
             failed_transaction_num = i_trans;
             Test->tprintf("Closing connection\n");
             mysql_close(conn);
+            Test->tprintf("Waiting for repication\n");
+            sleep(15);
             Test->tprintf("Calling select_new_master()\n");
             select_new_master(Test);
             master = 2;

@@ -56,8 +56,8 @@ int main(int argc, char *argv[])
     int time_to_run = (Test->smoke) ? 10 : 30;
     Test->set_timeout(10);
 
-    Test->tprintf("Connecting to RWSplit %s\n", Test->maxscale_IP);
-    Test->connect_rwsplit();
+    Test->tprintf("Connecting to RWSplit %s\n", Test->maxscales->IP[0]);
+    Test->maxscales->connect_rwsplit(0);
 
     Test->repl->connect();
     Test->tprintf("Drop t1 if exists\n");
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 
     Test->set_timeout(30);
     Test->tprintf("Trying query to RWSplit, expecting failure, but not a crash\n");
-    if (execute_query_silent(Test->conn_rwsplit, (char *) "show processlist;") == 0)
+    if (execute_query_silent(Test->maxscales->conn_rwsplit[0], (char *) "show processlist;") == 0)
     {
         Test->add_result(1, "Failure is expected, but query is ok\n");
     }
@@ -115,14 +115,14 @@ int main(int argc, char *argv[])
 
     Test->set_timeout(20);
     Test->tprintf("Checking Maxscale is alive\n");
-    Test->check_maxscale_alive();
+    Test->check_maxscale_alive(0);
 
     Test->set_timeout(20);
     Test->tprintf("Reconnecting to RWSplit ...\n");
-    Test->connect_rwsplit();
+    Test->maxscales->connect_rwsplit(0);
     Test->tprintf("                        ... and trying query\n");
-    Test->try_query(Test->conn_rwsplit, (char *) "show processlist;");
-    Test->close_rwsplit();
+    Test->try_query(Test->maxscales->conn_rwsplit[0], (char *) "show processlist;");
+    Test->maxscales->close_rwsplit(0);
 
     /** Clean up */
     Test->repl->connect();
@@ -138,7 +138,7 @@ void *parall_traffic( void *ptr )
 {
     MYSQL * conn;
     mysql_thread_init();
-    conn = Test->open_rwsplit_connection();
+    conn = Test->maxscales->open_rwsplit_connection(0);
     if ((conn != NULL) && (mysql_errno(conn) == 0))
     {
         while (exit_flag == 0)

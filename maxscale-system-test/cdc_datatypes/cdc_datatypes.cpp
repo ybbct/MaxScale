@@ -3,7 +3,7 @@
  */
 
 #include "../testconnections.h"
-#include "../cdc_connector.h"
+#include <cdc_connector.h>
 #include "cdc_result.h"
 #include <iostream>
 #include <stdio.h>
@@ -139,6 +139,16 @@ std::string type_to_table_name(const char* type)
     return name;
 }
 
+static std::string unquote(std::string str)
+{
+    if (str[0] == '\"')
+    {
+        str = str.substr(1, str.length() - 2);
+    }
+
+    return str;
+}
+
 bool run_test(TestConnections& test)
 {
     bool rval = true;
@@ -166,23 +176,23 @@ bool run_test(TestConnections& test)
             test.set_timeout(60);
             test.tprintf("Testing type: %s", test_set[x].types[i]);
             std::string name = type_to_table_name(test_set[x].types[i]);
-            CDC::Connection conn(test.maxscale_IP, 4001, "skysql", "skysql");
+            CDC::Connection conn(test.maxscales->IP[0], 4001, "skysql", "skysql");
 
             if (conn.createConnection() && conn.requestData(name))
             {
                 for (int j = 0; test_set[x].values[j]; j++)
                 {
-                    std::string row;
+                    CDC::Row row;
 
-                    if (conn.readRow(row))
+                    if ((row = conn.read()))
                     {
-                        TestInput input(test_set[x].values[j], test_set[x].types[i]);
-                        TestOutput output(row, field_name);
+                        std::string input = unquote(test_set[x].values[j]);
+                        std::string output = row->value(field_name);
 
-                        if (input != output)
+                        if (input != output && (input != "NULL" || output != ""))
                         {
                             test.tprintf("Result mismatch: %s(%s) => %s",
-                                         test_set[x].types[i], test_set[x].values[j], output.getValue().c_str());
+                                         test_set[x].types[i], input.c_str(), output.c_str());
                             rval = false;
                         }
                     }
@@ -212,13 +222,13 @@ int main(int argc, char *argv[])
     TestConnections::check_nodes(false);
     TestConnections test(argc, argv);
 
-    test.replicate_from_master();
+    test.replicate_from_master(0);
 
     if (!run_test(test))
     {
         test.add_result(1, "Test failed");
     }
 
-    test.check_maxscale_processes(1);
+    test.check_maxscale_processes(0, 1);
     return test.global_result;
 }

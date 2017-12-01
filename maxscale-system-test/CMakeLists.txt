@@ -46,14 +46,14 @@ else()
 endif()
 
 # The core library
-add_library(testcore SHARED testconnections.cpp mariadb_nodes.cpp
+add_library(testcore SHARED testconnections.cpp nodes.cpp mariadb_nodes.cpp maxscales.cpp
   mariadb_func.cpp get_com_select_insert.cpp maxadmin_operations.cpp big_transaction.cpp
   sql_t1.cpp test_binlog_fnc.cpp get_my_ip.cpp big_load.cpp  get_com_select_insert.cpp
   different_size.cpp fw_copy_rules maxinfo_func.cpp config_operations.cpp rds_vpc.cpp execute_cmd.cpp
-  blob_test.cpp cdc_connector.cpp)
-target_link_libraries(testcore ${MYSQL_CLIENT} z crypt nsl m pthread ssl crypto dl rt jansson)
+  blob_test.cpp)
+target_link_libraries(testcore ${MYSQL_CLIENT} z crypt nsl m pthread ssl crypto dl rt ${CDC_CONNECTOR_LIBRARIES} jansson)
 install(TARGETS testcore DESTINATION system-test)
-add_dependencies(testcore connector-c)
+add_dependencies(testcore connector-c cdc_connector)
 
 # Tool used to check backend state
 add_test_executable_notest(check_backend.cpp check_backend check_backend LABELS CONFIG)
@@ -187,7 +187,7 @@ add_test_executable(bug654.cpp bug654 replication LABELS maxscale REPL_BACKEND)
 add_test_executable(bug658.cpp bug658 replication LABELS readwritesplit readconnroute maxscale REPL_BACKEND)
 
 # Block all backends
-add_test_executable(bug662.cpp bug662 replication LABELS readwritesplit readconnroute maxscale REPL_BACKEND)
+add_test_executable(bug662.cpp bug662 bug662 LABELS readwritesplit readconnroute maxscale REPL_BACKEND)
 
 # Bad TEE filter configuration
 add_test_executable(bug664.cpp bug664 bug664 LABELS MySQLAuth MySQLProtocol)
@@ -257,7 +257,6 @@ add_test_executable(false_monitor_state_change.cpp false_monitor_state_change re
 
 # A set of tests for Firewall filter
 add_test_executable(fwf.cpp fwf fwf LABELS dbfwfilter REPL_BACKEND)
-add_test_executable(fwf2.cpp fwf2 fwf LABELS dbfwfilter REPL_BACKEND)
 add_test_executable(fwf_duplicate_rules.cpp fwf_duplicate_rules fwf LABELS dbfwfilter REPL_BACKEND)
 add_test_executable(fwf_prepared_stmt.cpp fwf_prepared_stmt fwf LABELS dbfwfilter REPL_BACKEND)
 add_test_executable(fwf_actions.cpp fwf_actions fwf_action LABELS dbfwfilter REPL_BACKEND)
@@ -351,6 +350,10 @@ add_test_executable(mxs280_select_outfile.cpp mxs280_select_outfile replication 
 # Tries prepared stmt 'SELECT 1,1,1,1...." with different nu,ber of '1'
 add_test_executable(mxs314.cpp mxs314 galera LABELS MySQLProtocol LIGHT GALERA_BACKEND)
 
+# Binary protocol prepared statement tests
+add_test_executable(binary_ps.cpp binary_ps replication LABELS readwritesplit LIGHT REPL_BACKEND)
+add_test_executable(binary_ps_cursor.cpp binary_ps_cursor replication LABELS readwritesplit LIGHT REPL_BACKEND)
+
 # Creates and closes a lot of connections, checks that 'maxadmin list servers' shows 0 connections at the end
 add_test_executable(mxs321.cpp mxs321 replication LABELS maxscale REPL_BACKEND)
 
@@ -383,12 +386,6 @@ add_test_executable(mxs559_block_master.cpp mxs559_block_master mxs559 LABELS re
 
 # Playing with blocking and unblocking nodes under INSERT load
 add_test_executable(mxs564_big_dump.cpp mxs564_big_dump galera_mxs564 LABELS readwritesplit readconnroute GALERA_BACKEND)
-
-# Executes simple queries from python script in the loop
-add_test_script(mxs585.py mxs585.py replication LABELS readwritesplit readconnroute UNSTABLE HEAVY REPL_BACKEND)
-
-# Simple transactions in the loop from python script with client SSL on
-add_test_script(mxs598.py mxs598.py ssl LABELS MySQLProtocol UNSTABLE HEAVY REPL_BACKEND)
 
 # Regression case for the bug "MaxScale fails to start silently if config file is not readable"
 add_test_executable(mxs621_unreadable_cnf.cpp mxs621_unreadable_cnf replication LABELS maxscale REPL_BACKEND)
@@ -428,8 +425,7 @@ add_test_executable(mxs812_2.cpp mxs812_2 longblob LABELS readwritesplit REPL_BA
 add_test_executable(mxs822_maxpasswd.cpp mxs822_maxpasswd maxpasswd LABELS maxscale REPL_BACKEND)
 
 # Do only SELECTS during time > wait_timeout and then do INSERT
-# This test will fail because the functionality hasn't been implemented
-#add_test_executable(mxs827_write_timeout.cpp mxs827_write_timeout mxs827_write_timeout LABELS readwritesplit REPL_BACKEND)
+add_test_executable(mxs827_write_timeout.cpp mxs827_write_timeout mxs827_write_timeout LABELS readwritesplit REPL_BACKEND)
 
 # Block and unblock first and second slaves and check that they are recovered
 add_test_executable(mxs874_slave_recovery.cpp mxs874_slave_recovery mxs874 LABELS readwritesplit REPL_BACKEND)
@@ -493,26 +489,6 @@ add_test_executable(mxs1418.cpp mxs1418 replication LABELS maxscale REPL_BACKEND
 #
 # https://jira.mariadb.org/browse/MXS-1295
 add_test_executable(mxs1295_sp_call.cpp mxs1295_sp_call mxs1295 LABELS maxscale REPL_BACKEND)
-
-# MXS-1451: Password is not stored with skip_authentication=true
-# https://jira.mariadb.org/browse/MXS-1451
-add_test_executable(mxs1451_skip_auth.cpp mxs1451_skip_auth mxs1451_skip_auth LABELS maxscale REPL_BACKEND)
-
-# MXS-1457: Deleted servers are not ignored when users are loaded
-# https://jira.mariadb.org/browse/MXS-1457
-add_test_executable(mxs1457_ignore_deleted.cpp mxs1457_ignore_deleted mxs1457_ignore_deleted LABELS REPL_BACKEND)
-
-# MXS-1468: Using dynamic commands to create readwritesplit configs fail after restart
-# https://jira.mariadb.org/browse/MXS-1468
-add_test_executable(mxs1468.cpp mxs1468 mxs1468 LABELS REPL_BACKEND)
-
- # MXS-1476: priority value ignored when a Galera node rejoins with a lower wsrep_local_index than current master
- # https://jira.mariadb.org/browse/MXS-1476
-add_test_executable(mxs1476.cpp mxs1476 mxs1476 LABELS GALERA_BACKEND)
-
- # MXS-1509: Show correct server state for multisource replication
- # https://jira.mariadb.org/browse/MXS-1509
-add_test_executable(mxs1509.cpp mxs1509 mxs1509 LABELS REPL_BACKEND)
 
 # 'namedserverfilter' test
 add_test_executable(namedserverfilter.cpp namedserverfilter namedserverfilter LABELS namedserverfilter LIGHT REPL_BACKEND)
@@ -659,6 +635,9 @@ add_test_executable(avro_alter.cpp avro_alter avro LABELS avrorouter binlogroute
 # In the binlog router setup stop Master and promote one of the Slaves to be new Master
 add_test_executable(binlog_change_master.cpp binlog_change_master setup_binlog_tx_safe LABELS binlogrouter BREAKS_REPL)
 
+# In the binlog router setup stop Master and promote one of the Slaves to be new Master (use GTID)
+add_test_executable(binlog_change_master.cpp binlog_change_master_gtid setup_binlog_tx_safe_gtid LABELS binlogrouter BREAKS_REPL)
+
 # trying to start binlog setup with incomplete Maxscale.cnf
 add_test_executable(binlog_incompl.cpp binlog_incompl binlog_incompl LABELS binlogrouter BREAKS_REPL)
 
@@ -699,14 +678,17 @@ add_test_executable(mxs781_binlog_wrong_passwrd.cpp mxs781_binlog_wrong_passwrd 
 # Regression case for crash if long host name is used for binlog router (in 'change master to ...')
 add_test_executable(mxs813_long_hostname.cpp mxs813_long_hostname setup_binlog LABELS binlogrouter BREAKS_REPL)
 
-# configure binlog rouer setup, execute queries and transactions, check data;
+# configure binlog router setup, execute queries and transactions, check data;
 add_test_executable(setup_binlog.cpp setup_binlog setup_binlog LABELS binlogrouter BREAKS_REPL)
 
-# configure binlog rouer setup, execute queries and transactions, check data; install semysync plugin, backends started with --binlog-checksum=CRC32 option
+# configure binlog router setup, execute queries and transactions, check data;
+add_test_executable(setup_binlog_gtid.cpp setup_binlog_gtid setup_binlog_gtid LABELS binlogrouter BREAKS_REPL)
+
+# configure binlog router setup, execute queries and transactions, check data; install semysync plugin, backends started with --binlog-checksum=CRC32 option
 # disabled because it is included into setup_binlog test, separate test was created for debugging
 # add_test_executable(setup_binlog_crc_32.cpp setup_binlog_crc_32 setup_binlog LABELS binlogrouter BREAKS_REPL)
 
-# configure binlog rouer setup, execute queries and transactions, check data; install semysync plugin, backends started with --binlog-checksum=NONE option
+# configure binlog router setup, execute queries and transactions, check data; install semysync plugin, backends started with --binlog-checksum=NONE option
 # disabled because it is included into setup_binlog test, separate test was created for debugging
 # add_test_executable(setup_binlog_crc_none.cpp setup_binlog_crc_none setup_binlog LABELS binlogrouter LIGHT BREAKS_REPL)
 
