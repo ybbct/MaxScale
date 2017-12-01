@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <set>
+#include <string>
 
 /**
  * @brief Class contains references to Master/Slave and Galera test setups

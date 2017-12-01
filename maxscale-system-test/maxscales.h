@@ -216,6 +216,17 @@ public:
     int find_master_maxadmin(int m, Mariadb_nodes * nodes);
     int find_slave_maxadmin(int m, Mariadb_nodes * nodes);
 
+    /**
+     * @brief Get the set of labels that are assigned to server @c name
+     *
+     * @param name The name of the server that must be present in the output `maxadmin list servers`
+     *
+     * @param m Number of Maxscale node
+     *
+     * @return A set of string labels assigned to this server
+     */
+    StringSet get_server_status(int m, const char* name);
+
 };
 
 #endif // MAXSCALES_H

@@ -50,7 +50,7 @@ add_library(testcore SHARED testconnections.cpp nodes.cpp mariadb_nodes.cpp maxs
   mariadb_func.cpp get_com_select_insert.cpp maxadmin_operations.cpp big_transaction.cpp
   sql_t1.cpp test_binlog_fnc.cpp get_my_ip.cpp big_load.cpp  get_com_select_insert.cpp
   different_size.cpp fw_copy_rules maxinfo_func.cpp config_operations.cpp rds_vpc.cpp execute_cmd.cpp
-  blob_test.cpp)
+  blob_test.cpp cdc_connector.cpp)
 target_link_libraries(testcore ${MYSQL_CLIENT} z crypt nsl m pthread ssl crypto dl rt ${CDC_CONNECTOR_LIBRARIES} jansson)
 install(TARGETS testcore DESTINATION system-test)
 add_dependencies(testcore connector-c cdc_connector)
@@ -257,6 +257,7 @@ add_test_executable(false_monitor_state_change.cpp false_monitor_state_change re
 
 # A set of tests for Firewall filter
 add_test_executable(fwf.cpp fwf fwf LABELS dbfwfilter REPL_BACKEND)
+add_test_executable(fwf2.cpp fwf2 fwf LABELS dbfwfilter REPL_BACKEND)
 add_test_executable(fwf_duplicate_rules.cpp fwf_duplicate_rules fwf LABELS dbfwfilter REPL_BACKEND)
 add_test_executable(fwf_prepared_stmt.cpp fwf_prepared_stmt fwf LABELS dbfwfilter REPL_BACKEND)
 add_test_executable(fwf_actions.cpp fwf_actions fwf_action LABELS dbfwfilter REPL_BACKEND)
@@ -387,6 +388,12 @@ add_test_executable(mxs559_block_master.cpp mxs559_block_master mxs559 LABELS re
 # Playing with blocking and unblocking nodes under INSERT load
 add_test_executable(mxs564_big_dump.cpp mxs564_big_dump galera_mxs564 LABELS readwritesplit readconnroute GALERA_BACKEND)
 
+# Executes simple queries from python script in the loop
+add_test_script(mxs585.py mxs585.py replication LABELS readwritesplit readconnroute UNSTABLE HEAVY REPL_BACKEND)
+
+# Simple transactions in the loop from python script with client SSL on
+add_test_script(mxs598.py mxs598.py ssl LABELS MySQLProtocol UNSTABLE HEAVY REPL_BACKEND)
+
 # Regression case for the bug "MaxScale fails to start silently if config file is not readable"
 add_test_executable(mxs621_unreadable_cnf.cpp mxs621_unreadable_cnf replication LABELS maxscale REPL_BACKEND)
 
@@ -489,6 +496,26 @@ add_test_executable(mxs1418.cpp mxs1418 replication LABELS maxscale REPL_BACKEND
 #
 # https://jira.mariadb.org/browse/MXS-1295
 add_test_executable(mxs1295_sp_call.cpp mxs1295_sp_call mxs1295 LABELS maxscale REPL_BACKEND)
+
+# MXS-1451: Password is not stored with skip_authentication=true
+# https://jira.mariadb.org/browse/MXS-1451
+add_test_executable(mxs1451_skip_auth.cpp mxs1451_skip_auth mxs1451_skip_auth LABELS maxscale REPL_BACKEND)
+
+# MXS-1457: Deleted servers are not ignored when users are loaded
+# https://jira.mariadb.org/browse/MXS-1457
+add_test_executable(mxs1457_ignore_deleted.cpp mxs1457_ignore_deleted mxs1457_ignore_deleted LABELS REPL_BACKEND)
+
+# MXS-1468: Using dynamic commands to create readwritesplit configs fail after restart
+# https://jira.mariadb.org/browse/MXS-1468
+add_test_executable(mxs1468.cpp mxs1468 mxs1468 LABELS REPL_BACKEND)
+
+# MXS-1476: priority value ignored when a Galera node rejoins with a lower wsrep_local_index than current master
+# https://jira.mariadb.org/browse/MXS-1476
+add_test_executable(mxs1476.cpp mxs1476 mxs1476 LABELS GALERA_BACKEND)
+
+# MXS-1509: Show correct server state for multisource replication
+# https://jira.mariadb.org/browse/MXS-1509
+add_test_executable(mxs1509.cpp mxs1509 mxs1509 LABELS REPL_BACKEND)
 
 # 'namedserverfilter' test
 add_test_executable(namedserverfilter.cpp namedserverfilter namedserverfilter LABELS namedserverfilter LIGHT REPL_BACKEND)

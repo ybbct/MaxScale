@@ -4,6 +4,11 @@
 #include <errno.h>
 #include <string>
 #include "mariadb_func.h"
+#include <set>
+#include <string>
+
+typedef std::set<std::string> StringSet;
+
 
 class Nodes
 {
