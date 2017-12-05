@@ -67,12 +67,15 @@ ${script_dir}/create_config.sh
 res=$?
 
 if [ $res == 0 ] ; then
+echo "script_dir 01 ${script_dir}"
     . ${script_dir}/configure_backend.sh
+echo "script_dir 02 ${script_dir}"
     ${mdbci_dir}/mdbci snapshot take --path-to-nodes $name --snapshot-name clean
 
-    if [ -z "${named_test}" ] ; then
+    if [ ! -z "${named_test}" ] ; then
         ./${named_test}
     else
+echo "script_dir 03 ${script_dir}"
         ./check_backend
         if [ $? != 0 ]; then
             echo "Backend broken!"
