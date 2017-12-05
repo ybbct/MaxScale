@@ -1,3 +1,4 @@
+#!/bin/bash
 echo "script_dir cb-01 ${script_dir}"
 . ${script_dir}/set_env.sh $name
 echo "script_dir cb-02 ${sc2ript_dir}"
