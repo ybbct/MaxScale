@@ -379,6 +379,10 @@ int Mariadb_nodes::start_replication()
         copy_to_node(i, str, dtr);
         ssh_node_f(i, false, "export node_user=\"%s\"; export node_password=\"%s\"; %s/create_user.sh %s",
                    user_name, password, access_homedir[0], socket_cmd[0]);
+        ssh_node_f(i, false, "export node_user=\"maxuser\"; export node_password=\"maxpwd\"; %s/create_user.sh %s",
+                   access_homedir[0], socket_cmd[0]);
+        ssh_node_f(i, false, "export node_user=\"maxskysql\"; export node_password=\"skysql\"; %s/create_user.sh %s",
+                   access_homedir[0], socket_cmd[0]);
     }
 
     connect();
