@@ -850,6 +850,7 @@ bool Mariadb_nodes::revert_nodes_snapshot()
         {
             rval = false;
         }
+        ssh_node(i, stop_db_command[i], true);
     }
     return rval;
 }
