@@ -324,8 +324,8 @@ TestConnections::~TestConnections()
         }
         else
         {
-            tprintf("Reverting snapshot\n");
-            revert_snapshot((char*) "clean");
+            //tprintf("Reverting snapshot\n");
+            //revert_snapshot((char*) "clean");
         }
     }
 
