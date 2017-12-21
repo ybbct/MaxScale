@@ -30,7 +30,7 @@ echo "maxscale_IP:     $maxscale_IP"
 if [ $maxscale_IP != "127.0.0.1" ] ; then
     ssh -i $maxscale_sshkey -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o LogLevel=quiet $maxscale_access_user@$maxscale_IP "rm -rf logs; mkdir logs; $maxscale_access_sudo cp $maxscale_log_dir/*.log logs/; $maxscale_access_sudo cp /tmp/core* logs; $maxscale_access_sudo chmod 777 -R logs"
     scp -i $maxscale_sshkey -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o LogLevel=quiet $maxscale_access_user@$maxscale_IP:logs/* $logs_dir
-    cp core.* $logs_dir
+#    cp core.* $logs_dir
     if [ $? -ne 0 ]; then
 	echo "Error copying Maxscale logs"
     fi
