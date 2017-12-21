@@ -84,10 +84,8 @@ if [ $res == 0 ] ; then
         ${mdbci_dir}/mdbci snapshot take --path-to-nodes $name --snapshot-name clean
         ctest -VV -D Nightly ${test_set}
     fi
-set -x
-    cd $dir
-#    ${script_dir}/copy_logs.sh
     cp core.* ${logs_publish_dir}
+    cd $dir
 else
   echo "Failed to create VMs, exiting"
   if [ "${do_not_destroy_vm}" != "yes" ] ; then
