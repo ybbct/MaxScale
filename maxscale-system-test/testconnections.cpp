@@ -313,7 +313,7 @@ TestConnections::~TestConnections()
         repl->disable_ssl();
         //galera->disable_ssl();
     }
-
+tprintf("Copying all logs\n");
     copy_all_logs();
 
 /*  Temporary commnted out due to Galera failure in case of revert
@@ -692,7 +692,9 @@ int TestConnections::copy_all_logs()
 
     if (!no_backend_log_copy)
     {
+        tprintf("Copying repl logs\n");
         copy_mariadb_logs(repl, (char *) "node");
+        tprintf("Copying galera logs\n");
         copy_mariadb_logs(galera, (char *) "galera");
     }
 
@@ -703,6 +705,7 @@ int TestConnections::copy_maxscale_logs(double timestamp)
     char log_dir[1024];
     char log_dir_i[1024];
     char sys[1024];
+    tprintf("Copying maxscale logs\n");
     if (timestamp == 0)
     {
         sprintf(log_dir, "LOGS/%s", test_name);
@@ -718,6 +721,7 @@ int TestConnections::copy_maxscale_logs(double timestamp)
         system(sys);
         if (strcmp(maxscales->IP[i], "127.0.0.1") != 0)
         {
+            tprintf("collect logs from maxscale number %d\n", i);
             maxscales->ssh_node_f(i, true,
                                   "rm -rf %s/logs; mkdir %s/logs; \
                                   %s cp %s/*.log %s/logs/; \
@@ -730,6 +734,7 @@ int TestConnections::copy_maxscale_logs(double timestamp)
                                   maxscales->access_sudo[i], maxscales->maxscale_cnf[i], maxscales->access_homedir[i],
                                   maxscales->access_sudo[i], maxscales->access_homedir[i]);
             sprintf(sys, "%s/logs/*", maxscales->access_homedir[i]);
+                                  tprintf("cp command %s\n", sys);
             maxscales->copy_from_node(i, sys, log_dir_i);
         }
         else
