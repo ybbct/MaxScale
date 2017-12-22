@@ -88,8 +88,8 @@ if [ $res == 0 ] ; then
 
     fi
     cp core.* ${logs_publish_dir}
-    cd $dir
     ${script_dir}/copy_logs.sh
+    cd $dir
 else
   echo "Failed to create VMs, exiting"
   if [ "${do_not_destroy_vm}" != "yes" ] ; then
