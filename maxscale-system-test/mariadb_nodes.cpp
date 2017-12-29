@@ -846,7 +846,7 @@ bool Mariadb_nodes::revert_nodes_snapshot()
         {
             rval = false;
         }
-        ssh_node_f(node, true, "sudo pkill -9 mysqld");
+        ssh_node_f(i, true, "sudo pkill -9 mysqld");
     }
 
     return rval;
