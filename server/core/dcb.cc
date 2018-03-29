@@ -2490,10 +2490,22 @@ dcb_accept(DCB *dcb)
             {
                 dcb_add_callback(client_dcb, DCB_REASON_HIGH_WATER, downstream_throttle_callback, NULL);
                 dcb_add_callback(client_dcb, DCB_REASON_LOW_WATER, downstream_throttle_callback, NULL);
-            }     
+            }
 
-            if (client_dcb->service->max_connections &&
-                client_dcb->service->client_count >= client_dcb->service->max_connections)
+            int *unauth_count = (int *)hashtable_fetch(service->unauthorized_count, client_dcb->remote);
+            if (unauth_count == NULL)
+            {
+                int tmp = 1;
+                hashtable_add(service->unauthorized_count, client_dcb->remote, &tmp);
+            }
+            else
+            {
+                *unauth_count++;
+            }
+
+            if ((client_dcb->service->max_connections &&
+                client_dcb->service->client_count >= client_dcb->service->max_connections) ||
+                (unauth_count && *unauth_count > UNAUTHORIZED_LIMITATION))
             {
                 // TODO: If connections can be queued, this is the place to put the
                 // TODO: connection on that queue.

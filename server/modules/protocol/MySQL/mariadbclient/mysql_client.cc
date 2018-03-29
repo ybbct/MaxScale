@@ -696,6 +696,9 @@ gw_read_do_authentication(DCB *dcb, GWBUF *read_buffer, int nbytes_read)
             }
         }
 
+        int *unauth_count = hashtable_fetch(dcb->service->unauthorized_count, dcb->remote);
+        *unauth_count--;
+
         protocol->protocol_auth_state = MXS_AUTH_STATE_RESPONSE_SENT;
         /**
          * Create session, and a router session for it.

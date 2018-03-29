@@ -167,6 +167,8 @@ SERVICE* service_alloc(const char *name, const char *router)
     service->stats.started = time(0);
     service->stats.n_failed_starts = 0;
     service->state = SERVICE_STATE_ALLOC;
+    service->unauthorized_count = 
+        hashtable_alloc(UNAUTHORIZED_HASH_SIZE, hashtable_item_strhash, hashtable_item_strcmp);
     spinlock_init(&service->spin);
 
     spinlock_acquire(&service_spin);

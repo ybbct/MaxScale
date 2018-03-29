@@ -172,6 +172,7 @@ createInstance(SERVICE *service, char **options)
      */
     spinlock_acquire(&instlock);
     inst->next = instances;
+    inst->sessions = NULL;
     instances = inst;
     spinlock_release(&instlock);
 

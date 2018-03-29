@@ -114,6 +114,10 @@ typedef struct server_ref_t
 #define DEFAULT_AUTH_READ_TIMEOUT    1
 #define DEFAULT_AUTH_WRITE_TIMEOUT   2
 
+/** Unauthorized ip hash map size */
+#define UNAUTHORIZED_HASH_SIZE 2048
+#define UNAUTHORIZED_LIMITATION 1024
+
 /**
  * Defines a service within the gateway.
  *
@@ -159,6 +163,7 @@ typedef struct service
     uint64_t capabilities;             /**< The capabilities of the service, @see enum routing_capability */
     int max_retry_interval;            /**< Maximum retry interval */
     bool session_track_trx_state;      /**< Get transaction state via session track mechanism */
+    HASHTABLE unauthorized_count;      /**< Unauthorized connection count per ip */
 } SERVICE;
 
 typedef enum count_spec_t
